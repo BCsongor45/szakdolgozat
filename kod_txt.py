@@ -1,77 +1,105 @@
 from ultralytics import YOLO
 import os
+import csv
+
+def get_time_of_day(hour):
+    if 6 <= hour < 12:
+        return "reggel"
+    elif 12 <= hour < 18:
+        return "délután"
+    elif 18 <= hour < 21:
+        return "este"
+    else:
+        return "éjszaka"
 
 
-model = YOLO("Modellek/yolov8n.pt")
+model = YOLO("Modellek/yolov8l.pt")
 
-# Főkép mappa
 base_folder = "Kepek"
-
-# Eredmény mappa
 result_folder = "Eredmeny"
-if not os.path.exists(result_folder):
-    os.makedirs(result_folder)
+os.makedirs(result_folder, exist_ok=True)
+output_csv = os.path.join(result_folder, "adatbazis.txt")
 
-eredmeny_file = os.path.join(result_folder, "eredmeny.txt")
-osszes_file = os.path.join(result_folder, "osszes.txt")
-
-# 2 - auto | 3 - motor | 5 - busz | 7 - teherautó/kamiom
 vehicles = [2, 3, 5, 7]
-
-# COCO class ID -> név
 class_map = {
     2: "auto",
     3: "motor",
     5: "busz",
-    7: "teherauto/kamion"
+    7: "kamion"
 }
 
-# Global összesítő
-global_counts = {name: 0 for name in class_map.values()}
 
-# Eredmeny.txt törlése / újraírása
-with open(eredmeny_file, "w", encoding="utf-8") as f:
-    f.write("Képenkénti dátum szerinti eredmények:\n\n")
+location_dict = {}
+with open("Hely/helyszin.txt", encoding="utf-8") as f:
+    next(f)
+    for line in f:
+        parts = line.strip().split(";")
+        if len(parts) == 3:
+            location_dict[parts[0]] = {"helyszin": parts[1], "irany": parts[2]}
 
-# Bejárjuk a Kepek/ mappát
-for subfolder in sorted(os.listdir("Kepek")):
 
-    full_path = os.path.join(base_folder, subfolder)
+image_id = 1
+with open(output_csv, "w", encoding="utf-8", newline="") as file:
+    writer = csv.writer(file, delimiter=";")
+    writer.writerow(["ID", "Helyszin", "Irany", "Datum", "Napszak", "Ora", "Auto_db",
+                    "Motor_db", "Busz_db", "Kamion_db"])
 
-    # Csak mappákra dolgozunk (dátum mappák)
-    if os.path.isdir(full_path):
 
-        # Dátum mappa összesítő
-        date_counts = {name: 0 for name in class_map.values()}
+    for subfolder in sorted(os.listdir(base_folder)):
+        full_path = os.path.join(base_folder, subfolder)
+        if not os.path.isdir(full_path):
+            continue
 
-        # Mappán belüli képek feldolgozása
+        parts = subfolder.split("_")
+        date = parts[0]
+
+
+        try:
+            hour = int(parts[1].split("-")[0])
+        except:
+            hour = 12
+
+        time_of_day = get_time_of_day(hour)
+
+
         for filename in sorted(os.listdir(full_path)):
-            if filename.lower().endswith(".jpg"):
-                image_path = os.path.join(full_path, filename)
-                print("Feldolgozás:", image_path)
+            if not filename.lower().endswith(".jpg"):
+                continue
 
-                # YOLO detektálás
-                results = model(image_path, classes=vehicles, imgsz=960)
+            base_name = os.path.splitext(filename)[0]
+            camera_id = base_name.split()[0]
 
-                # Egy képre szóló számlálás
-                for r in results[0].boxes.cls.tolist():
-                    cls_id = int(r)
-                    if cls_id in class_map:
-                        date_counts[class_map[cls_id]] += 1
-                        global_counts[class_map[cls_id]] += 1
+            data = location_dict.get(camera_id, {"helyszin": "ismeretlen", "irany": "ismeretlen"})
+            location = data["helyszin"]
+            direction = data["irany"]
 
-        # Kiírás a dátum szintű eredményhez
-        with open(eredmeny_file, "a", encoding="utf-8") as f:
-            f.write(f"{subfolder}:\n")
-            for vehicle, cnt in date_counts.items():
-                f.write(f"  {vehicle}: {cnt}\n")
-            f.write("\n")
+            counts = {"auto": 0, "motor": 0, "busz": 0, "kamion": 0}
+            image_path = os.path.join(full_path, filename)
+            results = model(source=image_path,
+                            classes=vehicles,
+                            imgsz=960,
+                            conf=0.25,
+                            iou=0.7)
 
-# Összesített eredmény kiírása
-with open(osszes_file, "w", encoding="utf-8") as f:
-    f.write("Összesített járműdetektálási eredmények:\n\n")
-    for vehicle, cnt in global_counts.items():
-        f.write(f"{vehicle}: {cnt}\n")
 
-print("Kész! A részletes eredmény itt található:", eredmeny_file)
-print("Az összesített eredmény itt található:", osszes_file)
+            if results and len(results[0].boxes) > 0:
+                for res in results[0].boxes.cls.tolist():
+                    class_id = int(res)
+                    if class_id in class_map:
+                        counts[class_map[class_id]] += 1
+
+
+            writer.writerow([
+                image_id,
+                location,
+                direction,
+                date,
+                time_of_day,
+                hour,
+                counts["auto"],
+                counts["motor"],
+                counts["busz"],
+                counts["kamion"]
+            ])
+
+            image_id += 1

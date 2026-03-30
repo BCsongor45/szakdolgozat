@@ -2,66 +2,104 @@ from ultralytics import YOLO
 import os
 import csv
 
+def get_time_of_day(hour):
+    if 6 <= hour < 12:
+        return "reggel"
+    elif 12 <= hour < 18:
+        return "délután"
+    elif 18 <= hour < 21:
+        return "este"
+    else:
+        return "éjszaka"
 
-model = YOLO("Modellek/yolov8n.pt")
 
+model = YOLO("Modellek/yolov8l.pt")
 
 base_folder = "Kepek"
-
 result_folder = "Eredmeny"
-if not os.path.exists(result_folder):
-    os.makedirs(result_folder)
-
-datum_folder = os.path.join(result_folder, "Datum")
-if not os.path.exists(datum_folder):
-    os.makedirs(datum_folder)
-
+os.makedirs(result_folder, exist_ok=True)
+output_csv = os.path.join(result_folder, "adatbazis.csv")
 
 vehicles = [2, 3, 5, 7]
 class_map = {
     2: "auto",
     3: "motor",
     5: "busz",
-    7: "teherauto/kamion"
+    7: "kamion"
 }
 
-global_counts = {name: 0 for name in class_map.values()}
+
+location_dict = {}
+with open("Hely/helyszin.txt", encoding="utf-8") as f:
+    next(f)
+    for line in f:
+        parts = line.strip().split(";")
+        if len(parts) == 3:
+            location_dict[parts[0]] = {"helyszin": parts[1], "irany": parts[2]}
 
 
-for subfolder in sorted(os.listdir(base_folder)):
-    full_path = os.path.join(base_folder, subfolder)
+image_id = 1
+with open(output_csv, "w", encoding="utf-8", newline="") as file:
+    writer = csv.writer(file, delimiter=";")
+    writer.writerow(["ID", "Helyszin", "Irany", "Datum", "Napszak", "Ora", "Auto_db",
+                    "Motor_db", "Busz_db", "Kamion_db"])
 
-    if os.path.isdir(full_path):
-        date_counts = {name: 0 for name in class_map.values()}
+
+    for subfolder in sorted(os.listdir(base_folder)):
+        full_path = os.path.join(base_folder, subfolder)
+        if not os.path.isdir(full_path):
+            continue
+
+        parts = subfolder.split("_")
+        date = parts[0]
+
+
+        try:
+            hour = int(parts[1].split("-")[0])
+        except:
+            hour = 12
+
+        time_of_day = get_time_of_day(hour)
+
 
         for filename in sorted(os.listdir(full_path)):
-            if filename.lower().endswith(".jpg"):
-                image_path = os.path.join(full_path, filename)
+            if not filename.lower().endswith(".jpg"):
+                continue
 
-                results = model(image_path, classes=vehicles, imgsz=960)
+            base_name = os.path.splitext(filename)[0]
+            camera_id = base_name.split()[0]
 
+            data = location_dict.get(camera_id, {"helyszin": "ismeretlen", "irany": "ismeretlen"})
+            location = data["helyszin"]
+            direction = data["irany"]
+
+            counts = {"auto": 0, "motor": 0, "busz": 0, "kamion": 0}
+            image_path = os.path.join(full_path, filename)
+            results = model(source=image_path,
+                            classes=vehicles,
+                            imgsz=960,
+                            conf=0.25,
+                            iou=0.7)
+
+
+            if results and len(results[0].boxes) > 0:
                 for res in results[0].boxes.cls.tolist():
                     class_id = int(res)
                     if class_id in class_map:
-                        name = class_map[class_id]
-                        date_counts[name] += 1
-                        global_counts[name] += 1
+                        counts[class_map[class_id]] += 1
 
-        date_csv_path = os.path.join(datum_folder, f"{subfolder}.csv")
 
-        with open(date_csv_path, "w", encoding="utf-8", newline="") as file:
-            writer = csv.writer(file)
-            writer.writerow(["datum", subfolder])
-            writer.writerow(["jarmu", "db"])
-            for vehicle_type, count in date_counts.items():
-                writer.writerow([vehicle_type, count])
+            writer.writerow([
+                image_id,
+                location,
+                direction,
+                date,
+                time_of_day,
+                hour,
+                counts["auto"],
+                counts["motor"],
+                counts["busz"],
+                counts["kamion"]
+            ])
 
-osszes_csv = os.path.join(result_folder, "osszes.csv")
-
-with open(osszes_csv, "w", encoding="utf-8", newline="") as file:
-    writer = csv.writer(file)
-    writer.writerow(["jarmu", "db"])
-    for vehicle, count in global_counts.items():
-        writer.writerow([vehicle, count])
-
-print("Kész!")
+            image_id += 1

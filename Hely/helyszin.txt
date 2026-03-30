@@ -1,0 +1,16 @@
+id;helyszin;irany
+1674118616;Árpád tér;Nyíregyháza
+1674118617;Árpád tér;Nyíregyháza
+1674118688;Árpád tér;Vasútállomás
+1674124256;Árpád tér;Hortobágy
+1674123716;Petőfi tér;Budapest
+1674123725;Petőfi tér;Nyíregyháza
+1674123901;Attila tér;Budapest
+1674123919;Attila tér;Nyíregyháza
+1674123942;Attila tér;Felüljáró
+1674124862;Füredi út;Hajdúböszörmény
+1674124878;Füredi út;Hajdúböszörmény
+1674124887;Füredi út;Hortobágy
+1674124897;Füredi út;Hortobágy
+1793876433;Irinyi út;Vasútállomás
+1793876434;Irinyi út;Nyíregyháza
